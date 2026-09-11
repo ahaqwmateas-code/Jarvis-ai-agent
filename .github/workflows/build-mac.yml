@@ -1,0 +1,33 @@
+name: Build Jarvis Mac app
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install (full, incl. native Mac modules)
+        run: npm install
+
+      - name: Build (native + webpack)
+        run: npm run build
+
+      - name: Package Mac app (unsigned dir build)
+        run: npx electron-builder --mac --dir
+
+      - name: Upload downloadable
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-mac-app
+          retention-days: 90
+          path: dist/
