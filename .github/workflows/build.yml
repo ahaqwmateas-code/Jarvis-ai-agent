@@ -1,0 +1,41 @@
+name: Build Jarvis server
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install (Linux-safe, skips Mac-only parts)
+        run: npm install --ignore-scripts --force
+
+      - name: Bundle server to single file
+        run: npm run server:bundle
+
+      - name: Smoke test
+        run: |
+          node dist-server/jarvis-server.cjs > smoke.log 2>&1 &
+          SRV=$!
+          sleep 10
+          curl -sf http://localhost:34115/health
+          kill $SRV
+
+      - name: Upload downloadable
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-server-linux
+          retention-days: 90
+          path: |
+            dist-server/jarvis-server.cjs
+            README.md
+            LICENSE
