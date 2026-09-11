@@ -17,7 +17,7 @@ jobs:
           cache: 'npm'
 
       - name: Install (full, incl. native Mac modules)
-        run: npm install
+        run: npm install --force
 
       - name: Build (native + webpack)
         run: npm run build
