@@ -26,11 +26,11 @@ jobs:
         run: npx electron-builder --mac --dir
 
       - name: Show packaged output
-        run: ls -la release/ release/mac/ | head -n 30
+        run: ls -la release/ release/mac-arm64/ | head -n 30
 
       - name: Upload downloadable
         uses: actions/upload-artifact@v4
         with:
           name: jarvis-mac-app
           retention-days: 90
-          path: release/mac/
+          path: release/mac-arm64/
