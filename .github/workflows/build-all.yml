@@ -1,3 +1,8 @@
+# Check if workflow exists
+ls -la .github/workflows/
+
+# If build-all.yml is missing or wrong — recreate it now
+cat > .github/workflows/build-all.yml << 'EOF'
 name: 🏗️ Build All Platforms
 run-name: JARVIS — All Builds
 on:
@@ -96,3 +101,228 @@ jobs:
           name: jarvis-Windows
           path: release/*.exe
           retention-days: 30
+EOF
+          if-no-files-found: error
+
+  build-linux:
+    name: 🐧 Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Package Linux Server
+        run: |
+          set -e
+          mkdir -p release/linux
+          if [ ! -d "dist-server" ]; then
+            echo "::error::dist-server folder not found after 'npm run build'. Check your build script output path."
+            exit 1
+          fi
+          cp -r dist-server package.json package-lock.json release/linux/
+          cd release/linux
+          npm ci --omit=dev --legacy-peer-deps
+
+      - name: Build AppImage
+        run: npx electron-builder --linux AppImage --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-Linux
+          path: release/
+          retention-days: 30
+          if-no-files-found: error
+
+  build-android:
+    name: 📱 Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Verify web build output exists
+        run: |
+          set -e
+          # Adjust WEB_DIR below to match your actual build output folder (dist, build, public, www, etc.)
+          WEB_DIR="dist"
+          if [ ! -d "$WEB_DIR" ]; then
+            echo "::error::Web build output '$WEB_DIR' not found. Update WEB_DIR in this workflow to match npm run build's output folder."
+            exit 1
+          fi
+          echo "WEB_DIR=$WEB_DIR" >> $GITHUB_ENV
+
+      - name: Setup Capacitor
+        run: |
+          npx cap init "Jarvis AI" ai.jarvis.app --web-dir="$WEB_DIR" --npm-client=npm || true
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Build Release APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-Android-APK
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+          if-no-files-found: error
+
+  build-windows:
+    name: 🪟 Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - run: npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-Windows
+          path: release/*.exe
+          retention-days: 30
+          if-no-files-found: error
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci
+      - run: npm run build
+      - name: Package Linux Server
+        run: |
+          mkdir -p release/linux
+          cp -r dist-server package.json package-lock.json release/linux/
+          cd release/linux && npm ci --only=production --legacy-peer-deps
+      - name: Build AppImage
+        run: npx electron-builder --linux AppImage --x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-Linux
+          path: release/
+          retention-days: 30
+
+  build-android:
+    name: 📱 Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+      - run: npm ci
+      - run: npm run build
+      - name: Setup Capacitor
+        run: |
+          npx cap init "Jarvis AI" ai.jarvis.app --web-dir=public --force
+          npx cap add android 2>/dev/null || true
+          npx cap sync android
+      - name: Build Release APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-Android-APK
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+  build-windows:
+    name: 🪟 Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder --win --x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-Windows
+          path: release/*.exe
+          retention-days: 30
+        with: { name: jarvis-Linux, path: release/, retention-days: 30 }
+
+  build-android:
+    name: 📱 Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ env.NODE_VERSION }} }
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: ${{ env.JAVA_VERSION }} }
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap init "Jarvis AI" ai.jarvis.app --web-dir=public --force
+      - run: npx cap add android 2>/dev/null || true
+      - run: npx cap sync android
+      - run: cd android && chmod +x gradlew && ./gradlew assembleRelease
+      - uses: actions/upload-artifact@v4
+        with: { name: jarvis-Android-APK, path: android/app/build/outputs/apk/release/*.apk, retention-days: 30 }
+
+  build-windows:
+    name: 🪟 Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ env.NODE_VERSION }} }
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder --win --x64
+      - uses: actions/upload-artifact@v4
+        with: { name: jarvis-Windows, path: release/*.exe, retention-days: 30 }
