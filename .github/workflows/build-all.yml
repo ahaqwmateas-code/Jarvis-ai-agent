@@ -1,8 +1,3 @@
-# Check if workflow exists
-ls -la .github/workflows/
-
-# If build-all.yml is missing or wrong — recreate it now
-cat > .github/workflows/build-all.yml << 'EOF'
 name: 🏗️ Build All Platforms
 run-name: JARVIS — All Builds
 on:
@@ -13,6 +8,7 @@ on:
 env:
   NODE_VERSION: 22
   JAVA_VERSION: 17
+  NODE_OPTIONS: --max-old-space-size=4096
 
 jobs:
   build-mac:
@@ -21,19 +17,78 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: \${{ env.NODE_VERSION }}
+        with: { node-version: ${{ env.NODE_VERSION }} }
       - run: npm ci
       - run: npm run build
-      - run: npx electron-builder --mac --x64 --arm64
+      - run: npx electron-builder --mac --x64 --arm64 --publish=never
       - uses: actions/upload-artifact@v4
-        with:
-          name: jarvis-macOS
-          path: release/*.dmg
-          retention-days: 30
+        with: { name: jarvis-macOS, path: release/*.dmg, retention-days: 30 }
 
   build-linux:
     name: 🐧 Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ env.NODE_VERSION }} }
+      - name: Install Linux system dependencies
+        run: sudo apt-get update && sudo apt-get install -y rpm fakeroot libfuse2
+      - run: npm ci
+      - run: npm run build
+      - name: Package Linux Server
+        run: |
+          mkdir -p release/linux
+          if [ -d "dist-server" ]; then
+            cp -r dist-server package.json package-lock.json release/linux/
+            cd release/linux && npm ci --only=production --legacy-peer-deps
+          else
+            echo "dist-server not found — skipping server bundle"
+            cp package.json package-lock.json release/linux/
+          fi
+      - name: Build Electron AppImage
+        run: npx electron-builder --linux AppImage --x64 --publish=never
+      - uses: actions/upload-artifact@v4
+        with: { name: jarvis-Linux, path: release/, retention-days: 30 }
+
+  build-android:
+    name: 📱 Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ env.NODE_VERSION }} }
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: ${{ env.JAVA_VERSION }} }
+      - run: npm ci
+      - run: npm run build
+      - name: Setup Capacitor
+        run: |
+          npx cap init "Jarvis AI" ai.jarvis.app --web-dir=public --force
+          npx cap add android --force
+          npx cap sync android
+      - name: Build Release APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew clean assembleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with: { name: jarvis-Android-APK, path: android/app/build/outputs/apk/release/*.apk, retention-days: 30 }
+
+  build-windows:
+    name: 🪟 Windows
+    runs-on: windows-latest
+    defaults:
+      run: { shell: bash }
+    steps:
+      - uses: actions/checkout@v4
+        with: { line-ending: 'lf' }
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ env.NODE_VERSION }} }
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder --win --x64 --publish=never
+      - uses: actions/upload-artifact@v4
+        with: { name: jarvis-Windows, path: release/*.exe, retention-days: 30 }
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
