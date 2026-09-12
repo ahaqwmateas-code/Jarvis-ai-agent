@@ -1,0 +1,80 @@
+name: 🏗️ Build All Platforms
+run-name: JARVIS — Build All
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: 22
+  JAVA_VERSION: 17
+
+jobs:
+  build-mac:
+    name: 🍎 macOS
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ env.NODE_VERSION }} }
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder --mac --x64 --arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-macOS
+          path: release/*.dmg
+          retention-days: 30
+
+  build-linux:
+    name: 🐧 Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ env.NODE_VERSION }} }
+      - run: npm ci
+      - run: npm run build
+      - run: mkdir -p release/linux && cp -r dist-server package.json release/linux/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-Linux
+          path: release/
+          retention-days: 30
+
+  build-android:
+    name: 📱 Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ env.NODE_VERSION }} }
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: ${{ env.JAVA_VERSION }} }
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap init "Jarvis AI" ai.jarvis.app --web-dir=public --force
+      - run: npx cap add android 2>/dev/null || true
+      - run: npx cap sync android
+      - run: cd android && chmod +x gradlew && ./gradlew assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-Android-APK
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+  build-windows:
+    name: 🪟 Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ env.NODE_VERSION }} }
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder --win --x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-Windows
+          path: release/*.exe, release/*.msi
+          retention-days: 30
